@@ -78,10 +78,22 @@ export default function App() {
   const [gridH, setGridH] = useState(0);
   const [gridColors, setGridColors] = useState([]); // flat array of hex strings
   const [hover, setHover] = useState({ x: -1, y: -1 });
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [lockPixelation, setLockPixelation] = useState(false);
+  const [lockGenesis, setLockGenesis] = useState(false);
+  // New: share/import code
+  const [shareCode, setShareCode] = useState("");
+  // New: mouse position in stage pixels for tooltip placement
+  const [mousePx, setMousePx] = useState({ x: 0, y: 0 });
+  // New: Intro modal visibility
+  const [showIntro, setShowIntro] = useState(true);
 
   // Refs
   const baseCanvasRef = useRef(null);
   const overlayRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   // Precompute palette in RGB & Lab
   const paletteRGB = useMemo(() => PALETTE.map(hexToRgb), []);
@@ -178,7 +190,7 @@ export default function App() {
 
     // Hover crosshair + cell outline
     if (hover.x >= 0 && hover.y >= 0) {
-      ctx.strokeStyle = "#39FF14"; // neon green crosshair
+      ctx.strokeStyle = "#FF2EC4"; // neon pink crosshair
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo((hover.x + 0.5) * zoom, 0);
@@ -196,13 +208,95 @@ export default function App() {
 
   // Mouse -> hovered cell
   const onMouseMove = (e) => {
+    if (isDragging) {
+      const deltaX = e.clientX - dragStart.x;
+      const deltaY = e.clientY - dragStart.y;
+      setDragOffset({ x: dragOffset.x + deltaX, y: dragOffset.y + deltaY });
+      setDragStart({ x: e.clientX, y: e.clientY });
+      return;
+    }
+
     const rect = e.currentTarget.getBoundingClientRect();
-    const x = Math.floor((e.clientX - rect.left) / zoom);
-    const y = Math.floor((e.clientY - rect.top) / zoom);
+    const pxX = e.clientX - rect.left;
+    const pxY = e.clientY - rect.top;
+    const x = Math.floor(pxX / zoom);
+    const y = Math.floor(pxY / zoom);
+    setMousePx({ x: pxX, y: pxY });
     if (x >= 0 && y >= 0 && x < gridW && y < gridH) setHover({ x, y });
     else setHover({ x: -1, y: -1 });
   };
-  const onMouseLeave = () => setHover({ x: -1, y: -1 });
+  const onMouseLeave = () => { setHover({ x: -1, y: -1 }); setMousePx({ x: 0, y: 0 }); };
+
+  // Drag handlers
+  const onMouseDown = (e) => {
+    setIsDragging(true);
+    setDragStart({ x: e.clientX, y: e.clientY });
+    e.preventDefault();
+  };
+
+  const onMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  const onMouseUpGlobal = () => {
+    setIsDragging(false);
+  };
+
+  // Zoom handlers
+  const zoomIn = () => setZoom(prev => Math.min(28, prev + 1));
+  const zoomOut = () => setZoom(prev => Math.max(4, prev - 1));
+
+  // Share/Import handlers
+  const exportSettings = useCallback(() => {
+    const payload = {
+      v: 1,
+      pixelsAcross,
+      genesisX,
+      genesisY,
+      zoom
+    };
+    try {
+      const json = JSON.stringify(payload);
+      const code = btoa(unescape(encodeURIComponent(json)));
+      setShareCode(code);
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(code).catch(() => {});
+      }
+    } catch (e) {
+      // no-op
+    }
+  }, [pixelsAcross, genesisX, genesisY, zoom]);
+
+  const applySettings = useCallback(() => {
+    const code = (shareCode || "").trim();
+    if (!code) return;
+    try {
+      const json = decodeURIComponent(escape(atob(code)));
+      const data = JSON.parse(json);
+      if (!data || typeof data !== "object") throw new Error("bad");
+      if (data.v !== 1) throw new Error("version");
+      if (typeof data.pixelsAcross === "number") setPixelsAcross(clamp(Math.round(data.pixelsAcross), 5, 400));
+      if (typeof data.genesisX === "number") setGenesisX(Math.round(data.genesisX));
+      if (typeof data.genesisY === "number") setGenesisY(Math.round(data.genesisY));
+      if (typeof data.zoom === "number") setZoom(clamp(Math.round(data.zoom), 4, 28));
+    } catch (e) {
+      alert("Invalid or unsupported code");
+    }
+  }, [shareCode]);
+
+  // Ensure dragging stops even if mouseup occurs outside the stage
+  useEffect(() => {
+    const handleUp = () => setIsDragging(false);
+    window.addEventListener('mouseup', handleUp);
+    return () => window.removeEventListener('mouseup', handleUp);
+  }, []);
+
+  // Close intro with Escape key
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') setShowIntro(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // Download PNG of pixelated output (at 1:1 pixel size)
   const downloadPng = () => {
@@ -217,8 +311,7 @@ export default function App() {
   // ------------- UI -------------
   return (
     <div
-      onDrop={onDrop}
-      onDragOver={onDragOver}
+      // removed global drag/drop to make the upload card the drop target
       style={{
         minHeight: "100vh",
         background: "#0B0B0B",
@@ -227,9 +320,72 @@ export default function App() {
         padding: 16
       }}
     >
+      {/* Intro Modal */}
+      {showIntro && (
+        <div
+          onClick={() => setShowIntro(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(2px)', zIndex: 1000 }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: 'min(560px, 92vw)',
+              background: '#141414',
+              border: '1px solid #2a2a2a',
+              borderRadius: 14,
+              padding: 16,
+              boxShadow: '0 12px 36px rgba(0,0,0,0.55)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Welcome to WHERE2PLACE</h2>
+              <button
+                onClick={() => setShowIntro(false)}
+                aria-label="Close"
+                title="Close"
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 8,
+                  background: '#1f1f1f',
+                  border: '1px solid #2a2a2a',
+                  color: '#EAEAEA',
+                  cursor: 'pointer'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{ color: '#A8A8A8', fontSize: 14, marginTop: 10, lineHeight: 1.5 }}>
+              Plan pixel art for r/place-like canvases using your image.
+              <ul style={{ margin: '8px 0 0 18px', padding: 0 }}>
+                <li>Click or drop an image in the Source Image card.</li>
+                <li>Drag to pan, use +/− to zoom, hover to see coordinates and color.</li>
+                <li>Adjust Pixels Across and Genesis X/Y to align to your target canvas.</li>
+                <li>Share/Import lets you export settings as a code and apply them later.</li>
+              </ul>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+              <button
+                onClick={() => setShowIntro(false)}
+                style={{ background: '#1f1f1f', border: '1px solid #2a2a2a', borderRadius: 10, color: '#EAEAEA', padding: '8px 12px', cursor: 'pointer' }}
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ maxWidth: 1100, margin: "0 auto" }}>
         <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 700 }}>Pixel Planner</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 700 }}>WHERE2PLACE</h1>
           <button
             onClick={downloadPng}
             style={{ background: "#1f1f1f", border: "1px solid #2a2a2a", padding: "8px 12px", borderRadius: 10, color: "#EAEAEA", cursor: "pointer" }}
@@ -251,86 +407,161 @@ export default function App() {
           {/* Upload */}
           <div style={{ background: "#121212", border: "1px solid #1f1f1f", borderRadius: 14, padding: 12 }}>
             <div style={{ fontWeight: 600, marginBottom: 8 }}>Source Image</div>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => { if (e.target.files?.[0]) loadImageFromFile(e.target.files[0]); }}
-            />
             <div
+              onClick={() => fileInputRef.current?.click()}
+              onDrop={onDrop}
+              onDragOver={onDragOver}
               style={{
-                marginTop: 10, padding: 12, border: "1px dashed #2f2f2f", borderRadius: 12,
-                color: "#A8A8A8", textAlign: "center", userSelect: "none"
+                marginTop: 10,
+                padding: 12,
+                border: "1px dashed #2f2f2f",
+                borderRadius: 12,
+                color: "#A8A8A8",
+                textAlign: "center",
+                userSelect: "none",
+                cursor: "pointer",
+                background: "#0f0f0f"
               }}
+              title="Click to choose a file or drop one here"
             >
-              Drag & Drop an image anywhere on this page
+              Drop image here or click to browse
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={(e) => { if (e.target.files?.[0]) loadImageFromFile(e.target.files[0]); }}
+                style={{ display: "none" }}
+              />
             </div>
           </div>
 
-          {/* Pixelation + Zoom */}
+          {/* Pixelation */}
           <div style={{ background: "#121212", border: "1px solid #1f1f1f", borderRadius: 14, padding: 12 }}>
-            <div style={{ fontWeight: 600, marginBottom: 8 }}>Display & Pixelation</div>
-            <div style={{ fontSize: 13, marginBottom: 6 }}>
-              Pixels across: <span style={{ fontFamily: "monospace" }}>{pixelsAcross}</span>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <div style={{ fontWeight: 600 }}>Pixelation</div>
+              <button
+                onClick={() => setLockPixelation((v) => !v)}
+                title={lockPixelation ? "Unlock" : "Lock"}
+                style={{
+                  width: 28,
+                  height: 28,
+                  background: "#1f1f1f",
+                  border: "1px solid #2a2a2a",
+                  borderRadius: 6,
+                  color: lockPixelation ? "#999" : "#EAEAEA",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 16,
+                  lineHeight: 1
+                }}
+              >
+                {lockPixelation ? "🔒" : "🔓"}
+              </button>
             </div>
-            <input
-              type="range"
-              min={5}
-              max={400}
-              value={pixelsAcross}
-              onChange={(e) => setPixelsAcross(parseInt(e.target.value, 10))}
-              style={{ width: "100%" }}
-            />
-            <div style={{ fontSize: 13, marginTop: 12, marginBottom: 6 }}>
-              Zoom: <span style={{ fontFamily: "monospace" }}>{zoom}x</span>
+            <div style={{ opacity: lockPixelation ? 0.55 : 1 }}>
+              <div style={{ fontSize: 13, marginBottom: 6 }}>
+                Pixels across: <span style={{ fontFamily: "monospace" }}>{pixelsAcross}</span>
+              </div>
+              <input
+                type="range"
+                min={5}
+                max={400}
+                value={pixelsAcross}
+                onChange={(e) => setPixelsAcross(parseInt(e.target.value, 10))}
+                style={{ width: "100%" }}
+                disabled={lockPixelation}
+              />
             </div>
-            <input
-              type="range"
-              min={4}
-              max={28}
-              value={zoom}
-              onChange={(e) => setZoom(parseInt(e.target.value, 10))}
-              style={{ width: "100%" }}
-            />
           </div>
 
           {/* Genesis coordinates */}
           <div style={{ background: "#121212", border: "1px solid #1f1f1f", borderRadius: 14, padding: 12 }}>
-            <div style={{ fontWeight: 600, marginBottom: 8 }}>Genesis Coordinates</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <label style={{ fontSize: 13 }}>
-                X
-                <input
-                  type="number"
-                  value={genesisX}
-                  onChange={(e) => setGenesisX(parseInt(e.target.value || "0", 10))}
-                  style={{ width: "100%", background: "#1a1a1a", border: "1px solid #2a2a2a", color: "#EAEAEA", borderRadius: 10, padding: "6px 8px", marginTop: 6 }}
-                />
-              </label>
-              <label style={{ fontSize: 13 }}>
-                Y
-                <input
-                  type="number"
-                  value={genesisY}
-                  onChange={(e) => setGenesisY(parseInt(e.target.value || "0", 10))}
-                  style={{ width: "100%", background: "#1a1a1a", border: "1px solid #2a2a2a", color: "#EAEAEA", borderRadius: 10, padding: "6px 8px", marginTop: 6 }}
-                />
-              </label>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <div style={{ fontWeight: 600 }}>Genesis Coordinates</div>
+              <button
+                onClick={() => setLockGenesis((v) => !v)}
+                title={lockGenesis ? "Unlock" : "Lock"}
+                style={{
+                  width: 28,
+                  height: 28,
+                  background: "#1f1f1f",
+                  border: "1px solid #2a2a2a",
+                  borderRadius: 6,
+                  color: lockGenesis ? "#999" : "#EAEAEA",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 16,
+                  lineHeight: 1
+                }}
+              >
+                {lockGenesis ? "🔒" : "🔓"}
+              </button>
             </div>
-            {hover.x >= 0 && (
-              <div style={{ marginTop: 10, fontSize: 13 }}>
-                Hovered: <span style={{ fontFamily: "monospace" }}>({genesisX + hover.x}, {genesisY + hover.y})</span>
-                {gridW && gridH && hover.y * gridW + hover.x >= 0 && (
-                  <span style={{ marginLeft: 8, fontFamily: "monospace" }}>
-                    {gridColors[hover.y * gridW + hover.x]}
-                  </span>
-                )}
+            <div style={{ opacity: lockGenesis ? 0.55 : 1 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <label style={{ fontSize: 13 }}>
+                  X
+                  <input
+                    type="number"
+                    value={genesisX}
+                    onChange={(e) => setGenesisX(parseInt(e.target.value || "0", 10))}
+                    style={{ width: "100%", background: "#1a1a1a", border: "1px solid #2a2a2a", color: "#EAEAEA", borderRadius: 10, padding: "6px 8px", marginTop: 6 }}
+                    disabled={lockGenesis}
+                  />
+                </label>
+                <label style={{ fontSize: 13 }}>
+                  Y
+                  <input
+                    type="number"
+                    value={genesisY}
+                    onChange={(e) => setGenesisY(parseInt(e.target.value || "0", 10))}
+                    style={{ width: "100%", background: "#1a1a1a", border: "1px solid #2a2a2a", color: "#EAEAEA", borderRadius: 10, padding: "6px 8px", marginTop: 6 }}
+                    disabled={lockGenesis}
+                  />
+                </label>
               </div>
-            )}
+            </div>
+            {/* Hover readout moved to tooltip near cursor; intentionally not shown here */}
+          </div>
+
+          {/* Share / Import */}
+          <div style={{ background: "#121212", border: "1px solid #1f1f1f", borderRadius: 14, padding: 12 }}>
+            <div style={{ fontWeight: 600, marginBottom: 8 }}>Share / Import</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8 }}>
+              <input
+                type="text"
+                value={shareCode}
+                onChange={(e) => setShareCode(e.target.value)}
+                placeholder="Paste code here..."
+                style={{ width: "100%", background: "#1a1a1a", border: "1px solid #2a2a2a", color: "#EAEAEA", borderRadius: 10, padding: "6px 8px" }}
+              />
+              <button
+                onClick={exportSettings}
+                title="Export current settings (copies to clipboard)"
+                style={{ background: "#1f1f1f", border: "1px solid #2a2a2a", borderRadius: 10, color: "#EAEAEA", padding: "6px 10px", cursor: "pointer", whiteSpace: "nowrap" }}
+              >
+                Export
+              </button>
+              <button
+                onClick={applySettings}
+                title="Apply the code to update settings"
+                style={{ background: "#1f1f1f", border: "1px solid #2a2a2a", borderRadius: 10, color: "#EAEAEA", padding: "6px 10px", cursor: "pointer", whiteSpace: "nowrap" }}
+              >
+                Apply
+              </button>
+            </div>
+            <div style={{ marginTop: 6, color: "#A8A8A8", fontSize: 12 }}>
+              Exports a compact, versioned code for pixels across, genesis and zoom.
+            </div>
           </div>
         </div>
 
         {/* Stage */}
-        <div style={{ background: "#121212", border: "1px solid #1f1f1f", borderRadius: 14, padding: 12, overflow: "auto" }}>
+        <div style={{ background: "#121212", border: "1px solid #1f1f1f", borderRadius: 14, padding: 12, overflow: "hidden", position: "relative" }}>
           {!img && (
             <div style={{ padding: 24, color: "#A8A8A8", textAlign: "center" }}>
               Upload or drop an image to begin.
@@ -338,36 +569,131 @@ export default function App() {
           )}
 
           {img && (
-            <div
-              className="stage"
-              style={{ position: "relative", width: gridW * zoom, height: gridH * zoom }}
-              onMouseMove={onMouseMove}
-              onMouseLeave={onMouseLeave}
-            >
-              {/* Base canvas rendered at 1:1 and scaled with CSS for crisp pixels */}
-              <canvas
-                ref={baseCanvasRef}
+            <div>
+              {/* Zoom controls */}
+              <div
                 style={{
-                  imageRendering: "pixelated",
-                  width: gridW * zoom,
-                  height: gridH * zoom
+                  position: "absolute",
+                  top: 20,
+                  right: 20,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                  zIndex: 10
                 }}
-              />
-              {/* Overlay for crosshair & border */}
-              <canvas
-                ref={overlayRef}
-                style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
-              />
-              {/* Size label */}
-              <div style={{ position: "absolute", top: -24, left: 0, fontSize: 12, opacity: 0.7, fontFamily: "monospace" }}>
-                W {gridW} × H {gridH} px
+              >
+                <button
+                  onClick={zoomIn}
+                  style={{
+                    width: 36,
+                    height: 36,
+                    background: "#1f1f1f",
+                    border: "1px solid #2a2a2a",
+                    borderRadius: 8,
+                    color: "#EAEAEA",
+                    cursor: "pointer",
+                    fontSize: 18,
+                    fontWeight: "bold",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center"
+                  }}
+                  title="Zoom in"
+                >
+                  +
+                </button>
+                <button
+                  onClick={zoomOut}
+                  style={{
+                    width: 36,
+                    height: 36,
+                    background: "#1f1f1f",
+                    border: "1px solid #2a2a2a",
+                    borderRadius: 8,
+                    color: "#EAEAEA",
+                    cursor: "pointer",
+                    fontSize: 18,
+                    fontWeight: "bold",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center"
+                  }}
+                  title="Zoom out"
+                >
+                  −
+                </button>
+              </div>
+
+              {/* Image container */}
+              <div
+                style={{
+                  overflow: "auto",
+                  maxHeight: "70vh",
+                  position: "relative"
+                }}
+              >
+                <div
+                  className="stage"
+                  style={{
+                    position: "relative",
+                    width: gridW * zoom,
+                    height: gridH * zoom,
+                    transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)`,
+                    cursor: isDragging ? "grabbing" : "grab"
+                  }}
+                  onMouseMove={onMouseMove}
+                  onMouseLeave={onMouseLeave}
+                  onMouseDown={onMouseDown}
+                  onMouseUp={onMouseUp}
+                >
+                  {/* Base canvas rendered at 1:1 and scaled with CSS for crisp pixels */}
+                  <canvas
+                    ref={baseCanvasRef}
+                    style={{
+                      imageRendering: "pixelated",
+                      width: gridW * zoom,
+                      height: gridH * zoom
+                    }}
+                  />
+                  {/* Overlay for crosshair & border */}
+                  <canvas
+                    ref={overlayRef}
+                    style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
+                  />
+                  {/* Hover tooltip near mouse */}
+                  {hover.x >= 0 && !isDragging && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        left: Math.min(mousePx.x + 12, gridW * zoom - 120),
+                        top: Math.min(mousePx.y + 12, gridH * zoom - 40),
+                        background: "rgba(30,30,30,0.9)",
+                        color: "#EAEAEA",
+                        border: "1px solid #2a2a2a",
+                        borderRadius: 8,
+                        padding: "4px 6px",
+                        fontSize: 12,
+                        fontFamily: "monospace",
+                        pointerEvents: "none",
+                        whiteSpace: "nowrap",
+                        boxShadow: "0 2px 8px rgba(0,0,0,0.4)"
+                      }}
+                    >
+                      ({genesisX + hover.x}, {genesisY + hover.y}){gridW && gridH ? ` ${gridColors[hover.y * gridW + hover.x]}` : ""}
+                    </div>
+                  )}
+                  {/* Size label */}
+                  <div style={{ position: "absolute", top: -24, left: 0, fontSize: 12, opacity: 0.7, fontFamily: "monospace" }}>
+                    W {gridW} × H {gridH} px (Zoom: {zoom}x)
+                  </div>
+                </div>
               </div>
             </div>
           )}
         </div>
 
         <footer style={{ color: "#A8A8A8", fontSize: 12, marginTop: 12 }}>
-          Tip: hover to see neon crosshairs and per-pixel coordinates (adjusted by your genesis offset).
+          Tip: hover to see neon crosshairs and per-pixel coordinates (adjusted by your genesis offset). Click and drag to pan the image.
         </footer>
       </div>
     </div>
