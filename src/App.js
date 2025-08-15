@@ -67,6 +67,13 @@ const PALETTE = [
   "#6D482F","#9C6926","#FFB470"
 ];
 
+// Base set used by the "Base set" button - colors from the BASESETCOLOURS.png
+const BASE_SET = [
+  "#000000", "#1D2951", "#898989", "#D4D7D9", "#FFFFFF", "#6D001A", "#BE0039", "#FF4500", "#FFA800", "#FFD635", "#FFF8B8",
+  "#7030A0", "#9C44C0", "#E4ABFF", "#DE107F", "#FF99AA", "#6D482F", "#9C6926", "#FFAB70",
+  "#00A368", "#00CC78", "#7EED56", "#00756F", "#009EAA", "#00CCC0", "#51E9F4", "#2450A4", "#3690EA"
+];
+
 export default function App() {
   // State
   const [img, setImg] = useState(null);         // HTMLImageElement
@@ -89,6 +96,10 @@ export default function App() {
   const [mousePx, setMousePx] = useState({ x: 0, y: 0 });
   // New: Intro modal visibility
   const [showIntro, setShowIntro] = useState(true);
+  // Palette controls - default to only base set enabled
+  const [paletteEnabled, setPaletteEnabled] = useState(() => PALETTE.map(hex => BASE_SET.includes(hex)));
+  const [lockPalette, setLockPalette] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   // Refs
   const baseCanvasRef = useRef(null);
@@ -98,17 +109,24 @@ export default function App() {
   // Precompute palette in RGB & Lab
   const paletteRGB = useMemo(() => PALETTE.map(hexToRgb), []);
   const paletteLab = useMemo(() => paletteRGB.map(rgbToLab), [paletteRGB]);
+  const enabledIndices = useMemo(() => {
+    const arr = [];
+    for (let i = 0; i < paletteEnabled.length; i++) if (paletteEnabled[i]) arr.push(i);
+    return arr;
+  }, [paletteEnabled]);
 
-  // Nearest palette color (Lab for perceptual accuracy)
+  // Nearest palette color (Lab for perceptual accuracy), honoring enabled colours
   const pickNearest = useCallback((rgb) => {
     let best = Infinity, idx = 0;
     const lab = rgbToLab(rgb);
-    for (let i = 0; i < paletteLab.length; i++) {
+    const pool = enabledIndices.length ? enabledIndices : [...PALETTE.keys()];
+    for (let k = 0; k < pool.length; k++) {
+      const i = pool[k];
       const d = labDistance(lab, paletteLab[i]);
       if (d < best) { best = d; idx = i; }
     }
     return PALETTE[idx];
-  }, [paletteLab]);
+  }, [paletteLab, enabledIndices]);
 
   // Handle file -> HTMLImageElement
   const loadImageFromFile = useCallback((file) => {
@@ -298,6 +316,36 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // Persist settings (including palette) to localStorage
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('w2p_settings') || 'null');
+      if (saved && typeof saved === 'object') {
+        if (typeof saved.pixelsAcross === 'number') setPixelsAcross(clamp(Math.round(saved.pixelsAcross), 5, 400));
+        if (typeof saved.genesisX === 'number') setGenesisX(Math.round(saved.genesisX));
+        if (typeof saved.genesisY === 'number') setGenesisY(Math.round(saved.genesisY));
+        if (typeof saved.zoom === 'number') setZoom(clamp(Math.round(saved.zoom), 4, 28));
+        if (Array.isArray(saved.paletteEnabled) && saved.paletteEnabled.length === PALETTE.length) setPaletteEnabled(saved.paletteEnabled.map(Boolean));
+        if (typeof saved.lockPalette === 'boolean') setLockPalette(saved.lockPalette);
+      }
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    try {
+      const toSave = {
+        pixelsAcross,
+        genesisX,
+        genesisY,
+        zoom,
+        paletteEnabled,
+        lockPalette,
+      };
+      localStorage.setItem('w2p_settings', JSON.stringify(toSave));
+    } catch {}
+  }, [pixelsAcross, genesisX, genesisY, zoom, paletteEnabled, lockPalette]);
+
   // Download PNG of pixelated output (at 1:1 pixel size)
   const downloadPng = () => {
     const canvas = baseCanvasRef.current;
@@ -306,6 +354,24 @@ export default function App() {
     a.href = canvas.toDataURL("image/png");
     a.download = "pixel-planner.png";
     a.click();
+  };
+
+  // Helpers for palette UI
+  const toggleColour = (idx) => {
+    if (lockPalette) return;
+    setPaletteEnabled((prev) => {
+      const next = [...prev];
+      next[idx] = !next[idx];
+      return next;
+    });
+  };
+  const applyBaseSet = () => {
+    if (lockPalette) return;
+    setPaletteEnabled(PALETTE.map(hex => BASE_SET.includes(hex)));
+  };
+  const enableFullSet = () => {
+    if (lockPalette) return;
+    setPaletteEnabled(Array(PALETTE.length).fill(true));
   };
 
   // ------------- UI -------------
@@ -320,6 +386,16 @@ export default function App() {
         padding: 16
       }}
     >
+      <style>
+        {`
+          input[type="text"]::-webkit-outer-spin-button,
+          input[type="text"]::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+          }
+        `}
+      </style>
+
       {/* Intro Modal */}
       {showIntro && (
         <div
@@ -506,26 +582,163 @@ export default function App() {
                 <label style={{ fontSize: 13 }}>
                   X
                   <input
-                    type="number"
+                    type="text"
                     value={genesisX}
-                    onChange={(e) => setGenesisX(parseInt(e.target.value || "0", 10))}
-                    style={{ width: "100%", background: "#1a1a1a", border: "1px solid #2a2a2a", color: "#EAEAEA", borderRadius: 10, padding: "6px 8px", marginTop: 6 }}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '' || val === '-') {
+                        setGenesisX(val);
+                      } else if (/^-?\d+$/.test(val)) {
+                        setGenesisX(parseInt(val, 10));
+                      }
+                    }}
+                    onBlur={(e) => {
+                      const val = e.target.value;
+                      if (val === '' || val === '-' || isNaN(parseInt(val, 10))) {
+                        setGenesisX(0);
+                      }
+                    }}
+                    style={{ 
+                      width: "100%", 
+                      background: "#1a1a1a", 
+                      border: "1px solid #2a2a2a", 
+                      color: "#EAEAEA", 
+                      borderRadius: 10, 
+                      padding: "6px 8px", 
+                      marginTop: 6,
+                      MozAppearance: "textfield"
+                    }}
                     disabled={lockGenesis}
                   />
                 </label>
                 <label style={{ fontSize: 13 }}>
                   Y
                   <input
-                    type="number"
+                    type="text"
                     value={genesisY}
-                    onChange={(e) => setGenesisY(parseInt(e.target.value || "0", 10))}
-                    style={{ width: "100%", background: "#1a1a1a", border: "1px solid #2a2a2a", color: "#EAEAEA", borderRadius: 10, padding: "6px 8px", marginTop: 6 }}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '' || val === '-') {
+                        setGenesisY(val);
+                      } else if (/^-?\d+$/.test(val)) {
+                        setGenesisY(parseInt(val, 10));
+                      }
+                    }}
+                    onBlur={(e) => {
+                      const val = e.target.value;
+                      if (val === '' || val === '-' || isNaN(parseInt(val, 10))) {
+                        setGenesisY(0);
+                      }
+                    }}
+                    style={{ 
+                      width: "100%", 
+                      background: "#1a1a1a", 
+                      border: "1px solid #2a2a2a", 
+                      color: "#EAEAEA", 
+                      borderRadius: 10, 
+                      padding: "6px 8px", 
+                      marginTop: 6,
+                      MozAppearance: "textfield"
+                    }}
                     disabled={lockGenesis}
                   />
                 </label>
               </div>
             </div>
             {/* Hover readout moved to tooltip near cursor; intentionally not shown here */}
+          </div>
+
+          {/* Colour conversion / Palette */}
+          <div style={{ background: "#121212", border: "1px solid #1f1f1f", borderRadius: 14, padding: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ fontWeight: 600 }}>Colour conversion</div>
+                <button
+                  onClick={() => setLockPalette(v => !v)}
+                  title={lockPalette ? "Unlock" : "Lock"}
+                  style={{
+                    width: 28,
+                    height: 28,
+                    background: "#1f1f1f",
+                    border: "1px solid #2a2a2a",
+                    borderRadius: 6,
+                    color: lockPalette ? "#999" : "#EAEAEA",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 16,
+                    lineHeight: 1
+                  }}
+                >
+                  {lockPalette ? "🔒" : "🔓"}
+                </button>
+              </div>
+              <button
+                onClick={() => setPaletteOpen(v => !v)}
+                title={paletteOpen ? 'Hide colours' : 'Show colours'}
+                style={{
+                  background: "#1f1f1f",
+                  border: "1px solid #2a2a2a",
+                  borderRadius: 8,
+                  color: "#EAEAEA",
+                  cursor: "pointer",
+                  padding: "4px 8px",
+                  fontSize: 12
+                }}
+              >
+                {paletteOpen ? 'Hide' : 'Edit'}
+              </button>
+            </div>
+            {!paletteOpen && (
+              <div style={{ color: '#A8A8A8', fontSize: 12 }}>
+                Enabled {enabledIndices.length}/{PALETTE.length}
+              </div>
+            )}
+            {paletteOpen && (
+              <div style={{ opacity: lockPalette ? 0.55 : 1 }}>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                  <button
+                    onClick={applyBaseSet}
+                    title="Enable only the Base set colours"
+                    disabled={lockPalette}
+                    style={{ background: '#1f1f1f', border: '1px solid #2a2a2a', borderRadius: 10, color: '#EAEAEA', padding: '6px 10px', cursor: lockPalette ? 'not-allowed' : 'pointer' }}
+                  >
+                    Base set
+                  </button>
+                  <button
+                    onClick={enableFullSet}
+                    title="Enable all colours"
+                    disabled={lockPalette}
+                    style={{ background: '#1f1f1f', border: '1px solid #2a2a2a', borderRadius: 10, color: '#EAEAEA', padding: '6px 10px', cursor: lockPalette ? 'not-allowed' : 'pointer' }}
+                  >
+                    Full set
+                  </button>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 6 }}>
+                  {PALETTE.map((hex, i) => {
+                    const enabled = paletteEnabled[i];
+                    return (
+                      <div key={hex + i}
+                        onClick={() => toggleColour(i)}
+                        title={`${hex} ${enabled ? '(enabled)' : '(disabled)'}`}
+                        style={{
+                          position: 'relative',
+                          width: 22,
+                          height: 22,
+                          borderRadius: 6,
+                          border: '1px solid #2a2a2a',
+                          background: hex,
+                          cursor: lockPalette ? 'not-allowed' : 'pointer',
+                          opacity: enabled ? 1 : 0.35,
+                          boxShadow: enabled ? '0 0 0 2px rgba(0,0,0,0.25) inset' : 'none'
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Share / Import */}
