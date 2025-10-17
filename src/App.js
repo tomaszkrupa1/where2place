@@ -641,8 +641,9 @@ export default function App() {
               title="Download PNG"
             >
               <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 4v12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                <path d="M6 12l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M12 4v8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                <path d="M8 10l4 4 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                <rect x="4" y="17" width="16" height="3" rx="1.5" fill="none" stroke="currentColor" strokeWidth="2" />
               </svg>
             </button>
           </div>
