@@ -1,5 +1,8 @@
 // App.js
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import W2PLogo from "./W2P_Logo.png";
+import Mascot1 from "./W2P_MAS.png";
+import Mascot2 from "./W2P_MAS2.png";
 
 /**
  * Pixel Planner – r/place / wplace helper
@@ -7,7 +10,7 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from "react"
  * - Live pixelation with slider
  * - Hardcoded color palette (replace PALETTE with your set)
  * - Hover crosshair + pixel border highlight + coordinate readout
- * - Genesis (origin) X/Y inputs to align coordinates
+ * - Starting (origin) X/Y inputs to align coordinates
  * - Zoom control + Download PNG
  *
  * Works in a fresh Create React App with no extra dependencies.
@@ -96,6 +99,7 @@ export default function App() {
   const [mousePx, setMousePx] = useState({ x: 0, y: 0 });
   // New: Intro modal visibility
   const [showIntro, setShowIntro] = useState(true);
+  const [introStep, setIntroStep] = useState(1);
   // Palette controls - default to only base set enabled
   const [paletteEnabled, setPaletteEnabled] = useState(() => PALETTE.map(hex => BASE_SET.includes(hex)));
   const [lockPalette, setLockPalette] = useState(false);
@@ -127,16 +131,13 @@ export default function App() {
     }
     return PALETTE[idx];
   }, [paletteLab, enabledIndices]);
-
   // Handle file -> HTMLImageElement
   const loadImageFromFile = useCallback((file) => {
-    const url = URL.createObjectURL(file);
-    const image = new Image();
-    image.onload = () => setImg(image);
-    image.src = url;
+  const url = URL.createObjectURL(file);
+  const image = new Image();
+  image.onload = () => setImg(image);
+  image.src = url;
   }, []);
-
-  // Drag & Drop
   const onDrop = (e) => {
     e.preventDefault();
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
@@ -159,18 +160,17 @@ export default function App() {
     octx.imageSmoothingEnabled = false;
     octx.drawImage(img, 0, 0, W, H);
 
-    const imgData = octx.getImageData(0, 0, W, H).data;
+    const data = octx.getImageData(0, 0, W, H).data;
     const colors = new Array(W * H);
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
         const i = (y * W + x) * 4;
-        const r = imgData[i], g = imgData[i + 1], b = imgData[i + 2];
+        const r = data[i], g = data[i + 1], b = data[i + 2];
         colors[y * W + x] = pickNearest({ r, g, b });
       }
     }
     setGridColors(colors);
   }, [img, pixelsAcross, pickNearest]);
-
   useEffect(() => { processImage(); }, [processImage]);
 
   // Draw main canvas when grid updates
@@ -261,8 +261,8 @@ export default function App() {
   };
 
   // Zoom handlers
-  const zoomIn = () => setZoom(prev => Math.min(28, prev + 1));
-  const zoomOut = () => setZoom(prev => Math.max(4, prev - 1));
+  const zoomIn = () => setZoom(prev => Math.min(64, prev + 1));
+  const zoomOut = () => setZoom(prev => Math.max(1, prev - 1));
 
   // Share/Import handlers
   const exportSettings = useCallback(() => {
@@ -296,7 +296,7 @@ export default function App() {
       if (typeof data.pixelsAcross === "number") setPixelsAcross(clamp(Math.round(data.pixelsAcross), 5, 400));
       if (typeof data.genesisX === "number") setGenesisX(Math.round(data.genesisX));
       if (typeof data.genesisY === "number") setGenesisY(Math.round(data.genesisY));
-      if (typeof data.zoom === "number") setZoom(clamp(Math.round(data.zoom), 4, 28));
+      if (typeof data.zoom === "number") setZoom(clamp(Math.round(data.zoom), 1, 64));
     } catch (e) {
       alert("Invalid or unsupported code");
     }
@@ -324,7 +324,7 @@ export default function App() {
         if (typeof saved.pixelsAcross === 'number') setPixelsAcross(clamp(Math.round(saved.pixelsAcross), 5, 400));
         if (typeof saved.genesisX === 'number') setGenesisX(Math.round(saved.genesisX));
         if (typeof saved.genesisY === 'number') setGenesisY(Math.round(saved.genesisY));
-        if (typeof saved.zoom === 'number') setZoom(clamp(Math.round(saved.zoom), 4, 28));
+        if (typeof saved.zoom === 'number') setZoom(clamp(Math.round(saved.zoom), 1, 64));
         if (Array.isArray(saved.paletteEnabled) && saved.paletteEnabled.length === PALETTE.length) setPaletteEnabled(saved.paletteEnabled.map(Boolean));
         if (typeof saved.lockPalette === 'boolean') setLockPalette(saved.lockPalette);
       }
@@ -383,15 +383,40 @@ export default function App() {
         background: "#0B0B0B",
         color: "#EAEAEA",
         fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif",
-        padding: 16
+        padding: "8px"
       }}
     >
       <style>
         {`
+          /* Ensure width includes padding and border to prevent inputs from overflowing */
+          *, *::before, *::after { box-sizing: border-box; }
+
           input[type="text"]::-webkit-outer-spin-button,
           input[type="text"]::-webkit-inner-spin-button {
             -webkit-appearance: none;
             margin: 0;
+          }
+          
+          @media (max-width: 768px) {
+            .controls-grid {
+              grid-template-columns: 1fr !important;
+              gap: 8px !important;
+            }
+            .palette-grid {
+              grid-template-columns: repeat(8, 1fr) !important;
+            }
+            .share-buttons {
+              grid-template-columns: 1fr !important;
+            }
+            .genesis-inputs {
+              grid-template-columns: 1fr !important;
+            }
+          }
+          
+          @media (max-width: 480px) {
+            .palette-grid {
+              grid-template-columns: repeat(6, 1fr) !important;
+            }
           }
         `}
       </style>
@@ -411,7 +436,7 @@ export default function App() {
               top: '50%',
               left: '50%',
               transform: 'translate(-50%, -50%)',
-              width: 'min(560px, 92vw)',
+              width: 'min(720px, 94vw)',
               background: '#141414',
               border: '1px solid #2a2a2a',
               borderRadius: 14,
@@ -419,376 +444,569 @@ export default function App() {
               boxShadow: '0 12px 36px rgba(0,0,0,0.55)'
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Welcome to WHERE2PLACE</h2>
-              <button
-                onClick={() => setShowIntro(false)}
-                aria-label="Close"
-                title="Close"
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 8,
-                  background: '#1f1f1f',
-                  border: '1px solid #2a2a2a',
-                  color: '#EAEAEA',
-                  cursor: 'pointer'
-                }}
-              >
-                ✕
-              </button>
-            </div>
-            <div style={{ color: '#A8A8A8', fontSize: 14, marginTop: 10, lineHeight: 1.5 }}>
-              Plan pixel art for r/place-like canvases using your image.
-              <ul style={{ margin: '8px 0 0 18px', padding: 0 }}>
-                <li>Click or drop an image in the Source Image card.</li>
-                <li>Drag to pan, use +/− to zoom, hover to see coordinates and color.</li>
-                <li>Adjust Pixels Across and Genesis X/Y to align to your target canvas.</li>
-                <li>Share/Import lets you export settings as a code and apply them later.</li>
-              </ul>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
-              <button
-                onClick={() => setShowIntro(false)}
-                style={{ background: '#1f1f1f', border: '1px solid #2a2a2a', borderRadius: 10, color: '#EAEAEA', padding: '8px 12px', cursor: 'pointer' }}
-              >
-                Got it
-              </button>
-            </div>
+            <div style={{ height: 8 }} />
+            {introStep === 1 ? (
+              <div style={{ marginTop: 12 }}>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: 16,
+                    alignItems: 'center'
+                  }}
+                >
+                  <div
+                    style={{
+                      position: 'relative',
+                      background: '#181818',
+                      color: '#EAEAEA',
+                      fontSize: 14,
+                      lineHeight: 1.6,
+                      padding: '16px 18px',
+                      border: '4px solid #EAEAEA',
+                      boxShadow: '8px 8px 0 #000',
+                      borderRadius: 0
+                    }}
+                  >
+                    WHERE2PLACE helps you plan pixel art for r/place-like canvases. Upload an image, set pixel size,
+                    align starting coordinates, and preview a palette-matched, pixel-perfect version before placing a single pixel.
+                    <div style={{ marginTop: 8, color: '#FFFFFF', opacity: 0.9, fontSize: 13 }}>
+                      Meet your guide: our mascot will pop up with helpful tips along the way.
+                    </div>
+                    {/* right pixel tail (8-bit) */}
+                    <div
+                      aria-hidden
+                      style={{ position: 'absolute', right: -12, top: '50%', transform: 'translateY(-50%)', width: 24, height: 24 }}
+                    >
+                      <div style={{ position: 'absolute', width: 8, height: 8, background: '#181818', boxShadow: '0 0 0 4px #EAEAEA, 8px 8px 0 #000', left: 0, top: -8 }} />
+                      <div style={{ position: 'absolute', width: 8, height: 8, background: '#181818', boxShadow: '0 0 0 4px #EAEAEA, 8px 8px 0 #000', left: 8, top: 0 }} />
+                      <div style={{ position: 'absolute', width: 8, height: 8, background: '#181818', boxShadow: '0 0 0 4px #EAEAEA, 8px 8px 0 #000', left: 16, top: 8 }} />
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', height: 'clamp(160px, 22vw, 260px)' }}>
+                    <img
+                      src={Mascot1}
+                      alt="WHERE2PLACE mascot"
+                      style={{ height: '100%', width: 'auto', display: 'block', margin: '0 auto', maxWidth: '100%' }}
+                    />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+                  <button
+                    onClick={() => setShowIntro(false)}
+                    style={{ background: '#1f1f1f', border: '1px solid #2a2a2a', borderRadius: 10, color: '#EAEAEA', padding: '8px 12px', cursor: 'pointer' }}
+                  >
+                    Skip
+                  </button>
+                  <button
+                    onClick={() => setIntroStep(2)}
+                    style={{ background: '#2a2a2a', border: '1px solid #3a3a3a', borderRadius: 10, color: '#FFFFFF', padding: '8px 12px', cursor: 'pointer', fontWeight: 600 }}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ marginTop: 12 }}>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: 16,
+                    alignItems: 'center'
+                  }}
+                >
+                  <div style={{ textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', height: 'clamp(160px, 22vw, 260px)' }}>
+                    <img
+                      src={Mascot2}
+                      alt="WHERE2PLACE mascot explaining features"
+                      style={{ height: '100%', width: 'auto', display: 'block', margin: '0 auto', maxWidth: '100%' }}
+                    />
+                  </div>
+                  <div
+                    style={{
+                      position: 'relative',
+                      background: '#181818',
+                      color: '#EAEAEA',
+                      fontSize: 14,
+                      lineHeight: 1.6,
+                      padding: '16px 18px',
+                      border: '4px solid #EAEAEA',
+                      boxShadow: '8px 8px 0 #000',
+                      borderRadius: 0
+                    }}
+                  >
+                    <ul style={{ margin: 0, padding: 0, paddingLeft: 18 }}>
+                      <li>Upload or drop an image into the Source Image card.</li>
+                      <li>Drag to pan, use +/− to zoom, and hover to see coordinates and colour.</li>
+                      <li>Adjust Pixels Across and Starting X/Y to align to your target canvas.</li>
+                      <li>Choose your colour set: enable the Base set or the full palette for conversion.</li>
+                      <li>Share/Import settings with a compact code to revisit your setup later.</li>
+                    </ul>
+                    {/* left pixel tail (8-bit) */}
+                    <div
+                      aria-hidden
+                      style={{ position: 'absolute', left: -12, top: '50%', transform: 'translateY(-50%)', width: 24, height: 24 }}
+                    >
+                      <div style={{ position: 'absolute', width: 8, height: 8, background: '#181818', boxShadow: '0 0 0 4px #EAEAEA, 8px 8px 0 #000', left: 16, top: -8 }} />
+                      <div style={{ position: 'absolute', width: 8, height: 8, background: '#181818', boxShadow: '0 0 0 4px #EAEAEA, 8px 8px 0 #000', left: 8, top: 0 }} />
+                      <div style={{ position: 'absolute', width: 8, height: 8, background: '#181818', boxShadow: '0 0 0 4px #EAEAEA, 8px 8px 0 #000', left: 0, top: 8 }} />
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 14 }}>
+                  <button
+                    onClick={() => setIntroStep(1)}
+                    style={{ background: '#1f1f1f', border: '1px solid #2a2a2a', borderRadius: 10, color: '#EAEAEA', padding: '8px 12px', cursor: 'pointer' }}
+                  >
+                    Back
+                  </button>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      onClick={() => setShowIntro(false)}
+                      style={{ background: '#2a2a2a', border: '1px solid #3a3a3a', borderRadius: 10, color: '#FFFFFF', padding: '8px 12px', cursor: 'pointer', fontWeight: 600 }}
+                    >
+                      Got it
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-        <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 700 }}>WHERE2PLACE</h1>
-          <button
-            onClick={downloadPng}
-            style={{ background: "#1f1f1f", border: "1px solid #2a2a2a", padding: "8px 12px", borderRadius: 10, color: "#EAEAEA", cursor: "pointer" }}
-            title="Download pixelated PNG"
-          >
-            Download PNG
-          </button>
+      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "0 8px" }}>
+        <header
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr auto 1fr",
+            alignItems: "center",
+            marginBottom: 16,
+            gap: 8
+          }}
+        >
+          <div />
+          <img
+            src={W2PLogo}
+            alt="WHERE2PLACE logo"
+            style={{
+              display: "block",
+              margin: "0 auto",
+              height: "clamp(28px, 6vw, 44px)",
+              width: "auto"
+            }}
+          />
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <button
+              onClick={() => { setIntroStep(1); setShowIntro(true); }}
+              style={{
+                width: 36,
+                height: 36,
+                background: "#1f1f1f",
+                border: "1px solid #2a2a2a",
+                borderRadius: 8,
+                color: "#EAEAEA",
+                cursor: "pointer",
+                fontSize: 16,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center"
+              }}
+              aria-label="Show information"
+              title="Information"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="none" />
+                <circle cx="12" cy="8" r="1.5" fill="currentColor" />
+                <rect x="11" y="11" width="2" height="7" rx="1" fill="currentColor" />
+              </svg>
+            </button>
+            <button
+              onClick={downloadPng}
+              style={{
+                width: 36,
+                height: 36,
+                background: "#1f1f1f",
+                border: "1px solid #2a2a2a",
+                borderRadius: 8,
+                color: "#EAEAEA",
+                cursor: "pointer",
+                fontSize: 18,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center"
+              }}
+              aria-label="Download PNG"
+              title="Download PNG"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 4v12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                <path d="M6 12l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          </div>
         </header>
 
         {/* Controls */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr 1fr",
-            gap: 12,
-            marginBottom: 16
-          }}
-        >
-          {/* Upload */}
-          <div style={{ background: "#121212", border: "1px solid #1f1f1f", borderRadius: 14, padding: 12 }}>
-            <div style={{ fontWeight: 600, marginBottom: 8 }}>Source Image</div>
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              onDrop={onDrop}
-              onDragOver={onDragOver}
-              style={{
-                marginTop: 10,
-                padding: 12,
-                border: "1px dashed #2f2f2f",
-                borderRadius: 12,
-                color: "#A8A8A8",
-                textAlign: "center",
-                userSelect: "none",
-                cursor: "pointer",
-                background: "#0f0f0f"
-              }}
-              title="Click to choose a file or drop one here"
-            >
-              Drop image here or click to browse
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={(e) => { if (e.target.files?.[0]) loadImageFromFile(e.target.files[0]); }}
-                style={{ display: "none" }}
-              />
-            </div>
-          </div>
-
-          {/* Pixelation */}
-          <div style={{ background: "#121212", border: "1px solid #1f1f1f", borderRadius: 14, padding: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-              <div style={{ fontWeight: 600 }}>Pixelation</div>
-              <button
-                onClick={() => setLockPixelation((v) => !v)}
-                title={lockPixelation ? "Unlock" : "Lock"}
+        {!img ? (
+          /* Show only upload box when no image - larger and more prominent */
+          <div style={{ maxWidth: "min(600px, 100%)", margin: "0 auto", marginBottom: 16 }}>
+            <div style={{ background: "#121212", border: "1px solid #1f1f1f", borderRadius: 14, padding: "clamp(12px, 3vw, 24px)" }}>
+              <div style={{ fontWeight: 600, marginBottom: 16, fontSize: "clamp(16px, 4vw, 18px)", textAlign: "center" }}>Upload Source Image</div>
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                onDrop={onDrop}
+                onDragOver={onDragOver}
                 style={{
-                  width: 28,
-                  height: 28,
-                  background: "#1f1f1f",
-                  border: "1px solid #2a2a2a",
-                  borderRadius: 6,
-                  color: lockPixelation ? "#999" : "#EAEAEA",
+                  marginTop: 10,
+                  padding: "clamp(24px, 6vw, 48px)",
+                  border: "2px dashed #2f2f2f",
+                  borderRadius: 12,
+                  color: "#A8A8A8",
+                  textAlign: "center",
+                  userSelect: "none",
                   cursor: "pointer",
+                  background: "#0f0f0f",
+                  fontSize: "clamp(14px, 3.5vw, 16px)",
+                  minHeight: "clamp(120px, 25vw, 200px)",
                   display: "flex",
                   alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 16,
-                  lineHeight: 1
+                  justifyContent: "center"
                 }}
+                title="Click to choose a file or drop one here"
               >
-                {lockPixelation ? "🔒" : "🔓"}
-              </button>
-            </div>
-            <div style={{ opacity: lockPixelation ? 0.55 : 1 }}>
-              <div style={{ fontSize: 13, marginBottom: 6 }}>
-                Pixels across: <span style={{ fontFamily: "monospace" }}>{pixelsAcross}</span>
+                <div>
+                  <div style={{ fontWeight: 600, marginBottom: 8 }}>Drop image here or click to browse</div>
+                  <div style={{ fontSize: "clamp(12px, 3vw, 14px)", opacity: 0.7 }}>Supports JPG, PNG, GIF, WebP and other image formats</div>
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => { if (e.target.files?.[0]) loadImageFromFile(e.target.files[0]); }}
+                  style={{ display: "none" }}
+                />
               </div>
-              <input
-                type="range"
-                min={5}
-                max={400}
-                value={pixelsAcross}
-                onChange={(e) => setPixelsAcross(parseInt(e.target.value, 10))}
-                style={{ width: "100%" }}
-                disabled={lockPixelation}
-              />
             </div>
           </div>
-
-          {/* Genesis coordinates */}
-          <div style={{ background: "#121212", border: "1px solid #1f1f1f", borderRadius: 14, padding: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-              <div style={{ fontWeight: 600 }}>Genesis Coordinates</div>
-              <button
-                onClick={() => setLockGenesis((v) => !v)}
-                title={lockGenesis ? "Unlock" : "Lock"}
+        ) : (
+          /* Show all controls when image is uploaded */
+          <div
+            className="controls-grid"
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+              gap: 12,
+              marginBottom: 12
+            }}
+          >
+            {/* Upload */}
+            <div style={{ background: "#121212", border: "1px solid #1f1f1f", borderRadius: 14, padding: 12 }}>
+              <div style={{ fontWeight: 600, marginBottom: 8 }}>Source Image</div>
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                onDrop={onDrop}
+                onDragOver={onDragOver}
                 style={{
-                  width: 28,
-                  height: 28,
-                  background: "#1f1f1f",
-                  border: "1px solid #2a2a2a",
-                  borderRadius: 6,
-                  color: lockGenesis ? "#999" : "#EAEAEA",
+                  marginTop: 10,
+                  padding: 12,
+                  border: "1px dashed #2f2f2f",
+                  borderRadius: 12,
+                  color: "#A8A8A8",
+                  textAlign: "center",
+                  userSelect: "none",
                   cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 16,
-                  lineHeight: 1
+                  background: "#0f0f0f"
                 }}
+                title="Click to choose a file or drop one here"
               >
-                {lockGenesis ? "🔒" : "🔓"}
-              </button>
-            </div>
-            <div style={{ opacity: lockGenesis ? 0.55 : 1 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                <label style={{ fontSize: 13 }}>
-                  X
-                  <input
-                    type="text"
-                    value={genesisX}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === '' || val === '-') {
-                        setGenesisX(val);
-                      } else if (/^-?\d+$/.test(val)) {
-                        setGenesisX(parseInt(val, 10));
-                      }
-                    }}
-                    onBlur={(e) => {
-                      const val = e.target.value;
-                      if (val === '' || val === '-' || isNaN(parseInt(val, 10))) {
-                        setGenesisX(0);
-                      }
-                    }}
-                    style={{ 
-                      width: "100%", 
-                      background: "#1a1a1a", 
-                      border: "1px solid #2a2a2a", 
-                      color: "#EAEAEA", 
-                      borderRadius: 10, 
-                      padding: "6px 8px", 
-                      marginTop: 6,
-                      MozAppearance: "textfield"
-                    }}
-                    disabled={lockGenesis}
-                  />
-                </label>
-                <label style={{ fontSize: 13 }}>
-                  Y
-                  <input
-                    type="text"
-                    value={genesisY}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === '' || val === '-') {
-                        setGenesisY(val);
-                      } else if (/^-?\d+$/.test(val)) {
-                        setGenesisY(parseInt(val, 10));
-                      }
-                    }}
-                    onBlur={(e) => {
-                      const val = e.target.value;
-                      if (val === '' || val === '-' || isNaN(parseInt(val, 10))) {
-                        setGenesisY(0);
-                      }
-                    }}
-                    style={{ 
-                      width: "100%", 
-                      background: "#1a1a1a", 
-                      border: "1px solid #2a2a2a", 
-                      color: "#EAEAEA", 
-                      borderRadius: 10, 
-                      padding: "6px 8px", 
-                      marginTop: 6,
-                      MozAppearance: "textfield"
-                    }}
-                    disabled={lockGenesis}
-                  />
-                </label>
+                Drop image here or click to browse
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => { if (e.target.files?.[0]) loadImageFromFile(e.target.files[0]); }}
+                  style={{ display: "none" }}
+                />
               </div>
             </div>
-            {/* Hover readout moved to tooltip near cursor; intentionally not shown here */}
-          </div>
 
-          {/* Colour conversion / Palette */}
-          <div style={{ background: "#121212", border: "1px solid #1f1f1f", borderRadius: 14, padding: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ fontWeight: 600 }}>Colour conversion</div>
+            {/* Pixelation */}
+            <div style={{ background: "#121212", border: "1px solid #1f1f1f", borderRadius: 14, padding: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <div style={{ fontWeight: 600 }}>Pixelation</div>
                 <button
-                  onClick={() => setLockPalette(v => !v)}
-                  title={lockPalette ? "Unlock" : "Lock"}
+                  onClick={() => setLockPixelation((v) => !v)}
+                  title={lockPixelation ? "Unlock" : "Lock"}
                   style={{
                     width: 28,
                     height: 28,
                     background: "#1f1f1f",
                     border: "1px solid #2a2a2a",
                     borderRadius: 6,
-                    color: lockPalette ? "#999" : "#EAEAEA",
+                    color: "#FFFFFF",
                     cursor: "pointer",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    fontSize: 16,
+                    fontSize: 14,
                     lineHeight: 1
                   }}
                 >
-                  {lockPalette ? "🔒" : "🔓"}
+                  {lockPixelation ? "●" : "○"}
                 </button>
               </div>
-              <button
-                onClick={() => setPaletteOpen(v => !v)}
-                title={paletteOpen ? 'Hide colours' : 'Show colours'}
-                style={{
-                  background: "#1f1f1f",
-                  border: "1px solid #2a2a2a",
-                  borderRadius: 8,
-                  color: "#EAEAEA",
-                  cursor: "pointer",
-                  padding: "4px 8px",
-                  fontSize: 12
-                }}
-              >
-                {paletteOpen ? 'Hide' : 'Edit'}
-              </button>
-            </div>
-            {!paletteOpen && (
-              <div style={{ color: '#A8A8A8', fontSize: 12 }}>
-                Enabled {enabledIndices.length}/{PALETTE.length}
+              <div style={{ opacity: lockPixelation ? 0.55 : 1 }}>
+                <div style={{ fontSize: 13, marginBottom: 6 }}>
+                  Pixels across: <span style={{ fontFamily: "monospace" }}>{pixelsAcross}</span>
+                </div>
+                <input
+                  type="range"
+                  min={5}
+                  max={400}
+                  value={pixelsAcross}
+                  onChange={(e) => setPixelsAcross(parseInt(e.target.value, 10))}
+                  style={{ width: "100%" }}
+                  disabled={lockPixelation}
+                />
               </div>
-            )}
-            {paletteOpen && (
-              <div style={{ opacity: lockPalette ? 0.55 : 1 }}>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+            </div>
+
+      {/* Starting coordinates */}
+            <div style={{ background: "#121212", border: "1px solid #1f1f1f", borderRadius: 14, padding: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <div style={{ fontWeight: 600 }}>Starting Coordinates</div>
+                <button
+                  onClick={() => setLockGenesis((v) => !v)}
+                  title={lockGenesis ? "Unlock" : "Lock"}
+                  style={{
+                    width: 28,
+                    height: 28,
+                    background: "#1f1f1f",
+                    border: "1px solid #2a2a2a",
+                    borderRadius: 6,
+                    color: "#FFFFFF",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 14,
+                    lineHeight: 1
+                  }}
+                >
+                  {lockGenesis ? "●" : "○"}
+                </button>
+              </div>
+              <div style={{ opacity: lockGenesis ? 0.55 : 1 }}>
+                <div className="genesis-inputs" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <label style={{ fontSize: 13 }}>
+                    X
+                    <input
+                      type="text"
+                      value={genesisX}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '' || val === '-') {
+                          setGenesisX(val);
+                        } else if (/^-?\d+$/.test(val)) {
+                          setGenesisX(parseInt(val, 10));
+                        }
+                      }}
+                      onBlur={(e) => {
+                        const val = e.target.value;
+                        if (val === '' || val === '-' || isNaN(parseInt(val, 10))) {
+                          setGenesisX(0);
+                        }
+                      }}
+                      style={{ 
+                        width: "100%", 
+                        background: "#1a1a1a", 
+                        border: "1px solid #2a2a2a", 
+                        color: "#EAEAEA", 
+                        borderRadius: 10, 
+                        padding: "8px 10px", 
+                        marginTop: 6,
+                        boxSizing: "border-box",
+                        MozAppearance: "textfield"
+                      }}
+                      disabled={lockGenesis}
+                    />
+                  </label>
+                  <label style={{ fontSize: 13 }}>
+                    Y
+                    <input
+                      type="text"
+                      value={genesisY}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '' || val === '-') {
+                          setGenesisY(val);
+                        } else if (/^-?\d+$/.test(val)) {
+                          setGenesisY(parseInt(val, 10));
+                        }
+                      }}
+                      onBlur={(e) => {
+                        const val = e.target.value;
+                        if (val === '' || val === '-' || isNaN(parseInt(val, 10))) {
+                          setGenesisY(0);
+                        }
+                      }}
+                      style={{ 
+                        width: "100%", 
+                        background: "#1a1a1a", 
+                        border: "1px solid #2a2a2a", 
+                        color: "#EAEAEA", 
+                        borderRadius: 10, 
+                        padding: "8px 10px", 
+                        marginTop: 6,
+                        boxSizing: "border-box",
+                        MozAppearance: "textfield"
+                      }}
+                      disabled={lockGenesis}
+                    />
+                  </label>
+                </div>
+              </div>
+              {/* Hover readout moved to tooltip near cursor; intentionally not shown here */}
+            </div>
+
+            {/* Colour conversion / Palette */}
+            <div style={{ background: "#121212", border: "1px solid #1f1f1f", borderRadius: 14, padding: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ fontWeight: 600 }}>Colour conversion</div>
                   <button
-                    onClick={applyBaseSet}
-                    title="Enable only the Base set colours"
-                    disabled={lockPalette}
-                    style={{ background: '#1f1f1f', border: '1px solid #2a2a2a', borderRadius: 10, color: '#EAEAEA', padding: '6px 10px', cursor: lockPalette ? 'not-allowed' : 'pointer' }}
+                    onClick={() => setLockPalette(v => !v)}
+                    title={lockPalette ? "Unlock" : "Lock"}
+                    style={{
+                      width: 28,
+                      height: 28,
+                      background: "#1f1f1f",
+                      border: "1px solid #2a2a2a",
+                      borderRadius: 6,
+                      color: "#FFFFFF",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 14,
+                      lineHeight: 1
+                    }}
                   >
-                    Base set
-                  </button>
-                  <button
-                    onClick={enableFullSet}
-                    title="Enable all colours"
-                    disabled={lockPalette}
-                    style={{ background: '#1f1f1f', border: '1px solid #2a2a2a', borderRadius: 10, color: '#EAEAEA', padding: '6px 10px', cursor: lockPalette ? 'not-allowed' : 'pointer' }}
-                  >
-                    Full set
+                    {lockPalette ? "●" : "○"}
                   </button>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 6 }}>
-                  {PALETTE.map((hex, i) => {
-                    const enabled = paletteEnabled[i];
-                    return (
-                      <div key={hex + i}
-                        onClick={() => toggleColour(i)}
-                        title={`${hex} ${enabled ? '(enabled)' : '(disabled)'}`}
-                        style={{
-                          position: 'relative',
-                          width: 22,
-                          height: 22,
-                          borderRadius: 6,
-                          border: '1px solid #2a2a2a',
-                          background: hex,
-                          cursor: lockPalette ? 'not-allowed' : 'pointer',
-                          opacity: enabled ? 1 : 0.35,
-                          boxShadow: enabled ? '0 0 0 2px rgba(0,0,0,0.25) inset' : 'none'
-                        }}
-                      />
-                    );
-                  })}
-                </div>
+                <button
+                  onClick={() => setPaletteOpen(v => !v)}
+                  title={paletteOpen ? 'Hide colours' : 'Show colours'}
+                  style={{
+                    background: "#1f1f1f",
+                    border: "1px solid #2a2a2a",
+                    borderRadius: 8,
+                    color: "#EAEAEA",
+                    cursor: "pointer",
+                    padding: "8px 12px",
+                    fontSize: 13
+                  }}
+                >
+                  {paletteOpen ? 'Hide' : 'Edit'}
+                </button>
               </div>
-            )}
+              {!paletteOpen && (
+                <div style={{ color: '#A8A8A8', fontSize: 12 }}>
+                  Enabled {enabledIndices.length}/{PALETTE.length}
+                </div>
+              )}
+              {paletteOpen && (
+                <div style={{ opacity: lockPalette ? 0.55 : 1 }}>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+                    <button
+                      onClick={applyBaseSet}
+                      title="Enable only the Base set colours"
+                      disabled={lockPalette}
+                      style={{ background: '#1f1f1f', border: '1px solid #2a2a2a', borderRadius: 10, color: '#EAEAEA', padding: '8px 12px', cursor: lockPalette ? 'not-allowed' : 'pointer', fontSize: '13px', flex: '1', minWidth: '80px' }}
+                    >
+                      Base set
+                    </button>
+                    <button
+                      onClick={enableFullSet}
+                      title="Enable all colours"
+                      disabled={lockPalette}
+                      style={{ background: '#1f1f1f', border: '1px solid #2a2a2a', borderRadius: 10, color: '#EAEAEA', padding: '8px 12px', cursor: lockPalette ? 'not-allowed' : 'pointer', fontSize: '13px', flex: '1', minWidth: '80px' }}
+                    >
+                      Full set
+                    </button>
+                  </div>
+                  <div className="palette-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 6 }}>
+                    {PALETTE.map((hex, i) => {
+                      const enabled = paletteEnabled[i];
+                      return (
+                        <div key={hex + i}
+                          onClick={() => toggleColour(i)}
+                          title={`${hex} ${enabled ? '(enabled)' : '(disabled)'}`}
+                          style={{
+                            position: 'relative',
+                            width: 22,
+                            height: 22,
+                            borderRadius: 6,
+                            border: '1px solid #2a2a2a',
+                            background: hex,
+                            cursor: lockPalette ? 'not-allowed' : 'pointer',
+                            opacity: enabled ? 1 : 0.35,
+                            boxShadow: enabled ? '0 0 0 2px rgba(0,0,0,0.25) inset' : 'none'
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Share / Import */}
+            <div style={{ background: "#121212", border: "1px solid #1f1f1f", borderRadius: 14, padding: 12 }}>
+              <div style={{ fontWeight: 600, marginBottom: 8 }}>Share / Import</div>
+              <div className="share-buttons" style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8 }}>
+                <input
+                  type="text"
+                  value={shareCode}
+                  onChange={(e) => setShareCode(e.target.value)}
+                  placeholder="Paste code here..."
+                  style={{ width: "100%", background: "#1a1a1a", border: "1px solid #2a2a2a", color: "#EAEAEA", borderRadius: 10, padding: "8px 10px", fontSize: "13px", minWidth: 0, boxSizing: "border-box" }}
+                />
+                <button
+                  onClick={exportSettings}
+                  title="Export current settings (copies to clipboard)"
+                  style={{ background: "#1f1f1f", border: "1px solid #2a2a2a", borderRadius: 10, color: "#EAEAEA", padding: "8px 12px", cursor: "pointer", whiteSpace: "nowrap", fontSize: "13px" }}
+                >
+                  Export
+                </button>
+                <button
+                  onClick={applySettings}
+                  title="Apply the code to update settings"
+                  style={{ background: "#1f1f1f", border: "1px solid #2a2a2a", borderRadius: 10, color: "#EAEAEA", padding: "8px 12px", cursor: "pointer", whiteSpace: "nowrap", fontSize: "13px" }}
+                >
+                  Apply
+                </button>
+              </div>
+              <div style={{ marginTop: 6, color: "#A8A8A8", fontSize: 12 }}>
+                Exports a compact, versioned code for pixels across, starting coordinates and zoom.
+              </div>
+            </div>
           </div>
+        )}
 
-          {/* Share / Import */}
-          <div style={{ background: "#121212", border: "1px solid #1f1f1f", borderRadius: 14, padding: 12 }}>
-            <div style={{ fontWeight: 600, marginBottom: 8 }}>Share / Import</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8 }}>
-              <input
-                type="text"
-                value={shareCode}
-                onChange={(e) => setShareCode(e.target.value)}
-                placeholder="Paste code here..."
-                style={{ width: "100%", background: "#1a1a1a", border: "1px solid #2a2a2a", color: "#EAEAEA", borderRadius: 10, padding: "6px 8px" }}
-              />
-              <button
-                onClick={exportSettings}
-                title="Export current settings (copies to clipboard)"
-                style={{ background: "#1f1f1f", border: "1px solid #2a2a2a", borderRadius: 10, color: "#EAEAEA", padding: "6px 10px", cursor: "pointer", whiteSpace: "nowrap" }}
-              >
-                Export
-              </button>
-              <button
-                onClick={applySettings}
-                title="Apply the code to update settings"
-                style={{ background: "#1f1f1f", border: "1px solid #2a2a2a", borderRadius: 10, color: "#EAEAEA", padding: "6px 10px", cursor: "pointer", whiteSpace: "nowrap" }}
-              >
-                Apply
-              </button>
-            </div>
-            <div style={{ marginTop: 6, color: "#A8A8A8", fontSize: 12 }}>
-              Exports a compact, versioned code for pixels across, genesis and zoom.
-            </div>
-          </div>
-        </div>
-
-        {/* Stage */}
-        <div style={{ background: "#121212", border: "1px solid #1f1f1f", borderRadius: 14, padding: 12, overflow: "hidden", position: "relative" }}>
-          {!img && (
-            <div style={{ padding: 24, color: "#A8A8A8", textAlign: "center" }}>
-              Upload or drop an image to begin.
-            </div>
-          )}
-
-          {img && (
+        {/* Stage - only shown when image is uploaded */}
+        {img && (
+          <div style={{ background: "#121212", border: "1px solid #1f1f1f", borderRadius: 14, padding: 12, overflow: "hidden", position: "relative" }}>
             <div>
               {/* Zoom controls */}
               <div
                 style={{
                   position: "absolute",
-                  top: 20,
-                  right: 20,
+                  top: "clamp(8px, 2vw, 20px)",
+                  right: "clamp(8px, 2vw, 20px)",
                   display: "flex",
                   flexDirection: "column",
                   gap: 4,
@@ -798,14 +1016,14 @@ export default function App() {
                 <button
                   onClick={zoomIn}
                   style={{
-                    width: 36,
-                    height: 36,
+                    width: "clamp(28px, 8vw, 36px)",
+                    height: "clamp(28px, 8vw, 36px)",
                     background: "#1f1f1f",
                     border: "1px solid #2a2a2a",
                     borderRadius: 8,
                     color: "#EAEAEA",
                     cursor: "pointer",
-                    fontSize: 18,
+                    fontSize: "clamp(14px, 4vw, 18px)",
                     fontWeight: "bold",
                     display: "flex",
                     alignItems: "center",
@@ -818,14 +1036,14 @@ export default function App() {
                 <button
                   onClick={zoomOut}
                   style={{
-                    width: 36,
-                    height: 36,
+                    width: "clamp(28px, 8vw, 36px)",
+                    height: "clamp(28px, 8vw, 36px)",
                     background: "#1f1f1f",
                     border: "1px solid #2a2a2a",
                     borderRadius: 8,
                     color: "#EAEAEA",
                     cursor: "pointer",
-                    fontSize: 18,
+                    fontSize: "clamp(14px, 4vw, 18px)",
                     fontWeight: "bold",
                     display: "flex",
                     alignItems: "center",
@@ -842,7 +1060,10 @@ export default function App() {
                 style={{
                   overflow: "auto",
                   maxHeight: "70vh",
-                  position: "relative"
+                  position: "relative",
+                  display: "flex",
+                  justifyContent: "center",
+                  alignItems: "center"
                 }}
               >
                 <div
@@ -892,22 +1113,25 @@ export default function App() {
                         boxShadow: "0 2px 8px rgba(0,0,0,0.4)"
                       }}
                     >
-                      ({genesisX + hover.x}, {genesisY + hover.y}){gridW && gridH ? ` ${gridColors[hover.y * gridW + hover.x]}` : ""}
+                      ({(Number(genesisX) || 0) + hover.x}, {(Number(genesisY) || 0) + hover.y}){gridW && gridH ? ` ${gridColors[hover.y * gridW + hover.x]}` : ""}
                     </div>
                   )}
                   {/* Size label */}
-                  <div style={{ position: "absolute", top: -24, left: 0, fontSize: 12, opacity: 0.7, fontFamily: "monospace" }}>
+                  <div style={{ position: "absolute", top: -24, left: 0, fontSize: "clamp(10px, 2.5vw, 12px)", opacity: 0.7, fontFamily: "monospace" }}>
                     W {gridW} × H {gridH} px (Zoom: {zoom}x)
                   </div>
                 </div>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        <footer style={{ color: "#A8A8A8", fontSize: 12, marginTop: 12 }}>
-          Tip: hover to see neon crosshairs and per-pixel coordinates (adjusted by your genesis offset). Click and drag to pan the image.
-        </footer>
+        {/* Footer - only shown when image is uploaded */}
+        {img && (
+          <footer style={{ color: "#A8A8A8", fontSize: "clamp(10px, 2.5vw, 12px)", marginTop: 12, textAlign: "center", padding: "0 8px" }}>
+            Tip: hover to see neon crosshairs and per-pixel coordinates (adjusted by your starting offset). Click and drag to pan the image.
+          </footer>
+        )}
       </div>
     </div>
   );
